@@ -1,0 +1,524 @@
+import discord
+from discord.ext import commands
+import os
+
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix='!', intents=intents)
+
+@bot.command()
+async def ping(ctx):
+    await ctx.send('pong')
+
+
+
+
+
+
+
+
+
+
+
+import json
+import discord
+from discord.ext import commands
+import random
+import asyncio
+
+# Funktion zum Laden des Inventars aus einer JSON-Datei
+def load_inventory(filename):
+    with open(filename, 'r') as f:
+        return json.load(f)
+
+# Funktion zur Anzeige des Inventars
+def display_inventory(inventory):
+    inventory_str = "====== real Odyssey's Inventory ======\n"
+    for item_id, item_data in sorted(inventory.items()):
+        inventory_str += f"{item_id} {item_data['emoji']} {str(item_data['count']).zfill(2)}\n"
+    return inventory_str
+
+# Define clans with their rarities and strengths
+clans = {
+    "Yeager": {"rarity": "Legendary", "strength": 135, "perks": ["Enhanced Titan Control", "Founder Abilities"]},
+    "Ackerman": {"rarity": "Epic", "strength": 95, "perks": ["Rage Boost", "Superior Combat Skills"]},
+    "Fritz": {"rarity": "Mythic", "strength": 140, "perks": ["Royal Blood", "Enhanced Healing"]},
+    "LeonHart": {"rarity": "Rare", "strength": 40, "perks": ["Close Combat", "Fast Running"]},
+    "Reiss": {"rarity": "Rare", "strength": 50, "perks": ["Royal Influence", "Strategic Mind"]},
+    "Braun": {"rarity": "Common", "strength": 20, "perks": ["Armored Defense"]},
+    "Arlert": {"rarity": "Uncommon", "strength": 5, "perks": ["Tactical Genius"]},
+    "Tybur": {"rarity": "Common", "strength": 30, "perks": ["Quick Reflexes", "Enhanced Healing"]},
+}
+
+# Titan forms
+titan_forms = {
+    "Attack Titan": {"strength_multiplier": 3, "perks": ["Increased speed", "Enhanced regeneration"]},
+    "Colossal Titan": {"strength_multiplier": 3.5, "perks": ["Massive explosion on transformation", "Incredible strength"]},
+    "Armored Titan": {"strength_multiplier": 2, "perks": ["Armor plating", "High durability"]},
+    "Female Titan": {"strength_multiplier": 2.5, "perks": ["Agility", "Crystallization"]},
+    "Beast Titan": {"strength_multiplier": 2, "perks": ["Incredible throwing ability", "Animalistic features"]},
+    "Jaw Titan": {"strength_multiplier": 2.5, "perks": ["Bite force", "Claw bite"]},
+}
+
+# Rarity chances
+rarity_chances = {
+    "Common": 60,
+    "Uncommon": 30,
+    "Rare": 20,
+    "Epic": 5.85,
+    "Legendary": 1,
+    "Mythic": 0.25,
+}
+
+users = {}  # In-memory user data storage
+dungeon_teams = {}  # To store teams for dungeon runs
+
+codes = {
+    "WELCOME100": {"coins": 3000},
+    "TITANBOOST": {"coins": 10000},
+    "Update1": {"coins": 3500},
+}
+
+emojis = {
+    "Blade": ":crossed_swords:",
+    "Shield": ":shield:",
+    "Potion": ":alembic:",
+    "Attack Sharp": ":dagger:",
+    "Spin": ":game_die:",
+    "2x Lucky Potion": ":jar:",
+    "Titan Serum": ":syringe:",
+    "Thunderspears": ":probing_cane:",
+}
+
+bosses = {
+    "Reiner Braun": {"strength": 350, "reward": "Armored Titan Serum"},
+    "Zeke Yeager": {"strength": 400, "reward": "Beast Titan Serum"},
+    "Annie Leonhart": {"strength": 300, "reward": "Female Titan Serum"},
+    "Berthold Fubar": {"strength": 500, "reward": "Colossal Titan Serum"},
+    "Lara Tybur": {"strength": 350, "reward": "War Hammer Titan Serum"},
+    "Eren Yeager": {"strength": 900, "reward": "Attack Titan Serum"},
+}
+
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix='!', intents=intents)
+
+# Story arcs representing key moments and decisions in AOT
+story_arcs = {
+    "start": {
+        "text": "The Titans have breached Wall Maria! Do you want to join the fight or flee?",
+        "choices": ["fight", "flee"]
+    },
+    "fight": {
+        "text": "You join the fight against the Titans. Do you want to attack the Titan directly or support your comrades?",
+        "choices": ["attack", "support"]
+    },
+    "flee": {
+        "text": "You decide to flee to the inner walls. Do you want to find your family or seek refuge with the military?",
+        "choices": ["family", "military"]
+    },
+    "attack": {
+        "text": "You attack the Titan bravely. Roll a dice to see if you succeed.",
+        "choices": ["roll"]
+    },
+    "support": {
+        "text": "You support your comrades in the fight, boosting their morale.",
+        "choices": ["continue"]
+    },
+    "family": {
+        "text": "You find your family and help them escape to the inner walls.",
+        "choices": ["continue"]
+    },
+    "military": {
+        "text": "You join the military and start your training as a soldier.",
+        "choices": ["continue"]
+    },
+    "roll": {
+        "text": "Rolling the dice...",
+        "choices": []
+    },
+    "continue": {
+        "text": "Your journey continues...",
+        "choices": []
+    }
+}
+
+# In-memory user state storage
+user_states = {}
+
+@bot.event
+async def on_ready():
+    print(f'We have logged in as {bot.user}')
+
+@bot.command()
+async def profile(ctx):
+    user_id = ctx.author.id
+    if user_id not in users:
+        await ctx.send("You don't have a profile yet. Use !spin to create one.")
+        return
+
+    profile = users[user_id]
+    response = (
+        f"**{ctx.author.name}'s Profile**\n"
+        f"**Clan:** {profile['clan']}\n"
+        f"**Rarity:** {profile['rarity']}\n"
+        f"**Strength:** {profile['strength']}\n"
+        f"**Perks:** {', '.join(profile['perks'])}\n"
+        f"**Inventory:** {', '.join([f'{emojis.get(item, item)} {item} ({count})' for item, count in profile['inventory'].items()])}\n"
+        f"**Coins:** {profile['coins']}\n"
+        f"**Titan Form:** {profile['titan_form'] if 'titan_form' in profile else 'None'}"
+    )
+    await ctx.send(response)
+
+@bot.command()
+async def spin(ctx):
+    user_id = ctx.author.id
+    if user_id not in users:
+        users[user_id] = {"inventory": {}, "coins": 2000, "spun": False, "strength": 0, "titan_form": None}
+
+    if users[user_id]["spun"]:
+        if users[user_id]["inventory"].get("Spin", 0) > 0:
+            users[user_id]["inventory"]["Spin"] -= 1
+        else:
+            await ctx.send("You have already spun once. You need to buy spins in the shop.")
+            return
+
+    spin_message = await ctx.send("Spinning... :gear: :gear: :gear:")
+    await asyncio.sleep(3)  # Simulate spin animation
+
+    rarity = random.choices(list(rarity_chances.keys()), list(rarity_chances.values()))[0]
+    available_clans = [clan for clan, data in clans.items() if data["rarity"] == rarity]
+    clan = random.choice(available_clans)
+    strength = clans[clan]["strength"]
+    perks = clans[clan]["perks"]
+
+    users[user_id].update({"clan": clan, "rarity": rarity, "strength": strength, "perks": perks, "spun": True})
+
+    await spin_message.edit(content=f"Congrats! You spun and got the {clan} clan with {rarity} rarity, {strength} strength, and perks: {', '.join(perks)}!")
+
+@bot.command()
+async def shop(ctx):
+    shop_items = {
+        "Blade": 500,
+        "Shield": 300,
+        "Potion": 100,
+        "Attack Sharp": 30000,
+        "Spin": 150,
+        "2x Lucky Potion": 2000,
+        "Thunderspears": 1000,
+    }
+    response = "**Shop Items:**\n"
+    for item, price in shop_items.items():
+        response += f"{emojis.get(item, item)} {item}: {price} coins\n"
+    await ctx.send(response)
+
+@bot.command()
+async def buy(ctx, item):
+    user_id = ctx.author.id
+    shop_items = {
+        "Blade": 500,
+        "Shield": 300,
+        "Potion": 100,
+        "Attack Sharp": 30000,
+        "Spin": 150,
+        "2x Lucky Potion": 2000,
+        "Thunderspears": 1000,
+    }
+    if user_id not in users:
+        await ctx.send("You don't have a profile yet. Use !spin to create one.")
+        return
+    if item not in shop_items:
+        await ctx.send("This item is not available in the shop.")
+        return
+    if users[user_id]["coins"] < shop_items[item]:
+        await ctx.send("You don't have enough coins to buy this item.")
+        return
+
+    users[user_id]["coins"] -= shop_items[item]
+    if item in users[user_id]["inventory"]:
+        users[user_id]["inventory"][item] += 1
+    else:
+        users[user_id]["inventory"][item] = 1
+
+    if item == "Spin":
+        users[user_id]["spun"] = False
+    await ctx.send(f"You bought a {emojis.get(item, item)} {item} for {shop_items[item]} coins.")
+
+@bot.command()
+async def inventory(ctx, sort_by=None):
+    user_id = ctx.author.id
+    if user_id not in users:
+        await ctx.send("You don't have a profile yet. Use !spin to create one.")
+        return
+
+    profile_inventory = users[user_id]["inventory"]
+    inventory_str = "====== Your Inventory ======\n"
+    if sort_by == "emoji":
+        sorted_inventory = sorted(profile_inventory.items(), key=lambda x: emojis.get(x[0], x[0]))
+    elif sort_by == "count":
+        sorted_inventory = sorted(profile_inventory.items(), key=lambda x: x[1], reverse=True)
+    else:
+        sorted_inventory = sorted(profile_inventory.items())
+    for item, count in sorted_inventory:
+        inventory_str += f"{emojis.get(item, item)} {item}: {count}\n"
+
+    await ctx.send(inventory_str)
+
+@bot.command()
+async def redeem(ctx, code):
+    user_id = ctx.author.id
+    if user_id not in users:
+        await ctx.send("You don't have a profile yet. Use !spin to create one.")
+        return
+
+    code = code.upper()
+    if code in codes:
+        reward = codes[code]
+        if "coins" in reward:
+            users[user_id]["coins"] += reward["coins"]
+            await ctx.send(f"Code redeemed! You received {reward['coins']} coins.")
+        if "item" in reward:
+            item = reward["item"]
+            if item in users[user_id]["inventory"]:
+                users[user_id]["inventory"][item] += 1
+            else:
+                users[user_id]["inventory"][item] = 1
+            await ctx.send(f"Code redeemed! You received {emojis.get(item, item)} {item}.")
+        del codes[code]  # Remove the code after redemption
+    else:
+        await ctx.send("Invalid code or code has already been redeemed.")
+
+@bot.command()
+async def fight(ctx, boss_name):
+    user_id = ctx.author.id
+    if user_id not in users:
+        await ctx.send("You don't have a profile yet. Use !spin to create one.")
+        return
+
+    if boss_name not in bosses:
+        await ctx.send(f"Invalid boss name. Available bosses are: {', '.join(bosses.keys())}")
+        return
+
+    boss = bosses[boss_name]
+    user_strength = users[user_id]["strength"]
+
+    if users[user_id]["titan_form"]:
+        titan_form = titan_forms[users[user_id]["titan_form"]]
+        user_strength *= titan_form["strength_multiplier"]
+        await ctx.send(f"You transform into the {users[user_id]['titan_form']}! Strength multiplied by {titan_form['strength_multiplier']}!")
+
+    if user_strength >= boss["strength"]:
+        await ctx.send(f"Congratulations! You defeated {boss_name} and received {boss['reward']}!")
+        item = boss['reward']
+        if item in users[user_id]["inventory"]:
+            users[user_id]["inventory"][item] += 1
+        else:
+            users[user_id]["inventory"][item] = 1
+    else:
+        await ctx.send(f"You fought bravely but {boss_name} was too strong. Keep training and try again!")
+
+@bot.command()
+async def dungeon(ctx):
+    user_id = ctx.author.id
+    if user_id not in users:
+        await ctx.send("You don't have a profile yet. Use !spin to create one.")
+        return
+
+    if user_id not in dungeon_teams:
+        dungeon_teams[user_id] = {"team": []}
+
+    if len(dungeon_teams[user_id]["team"]) >= 3:
+        await ctx.send("Your team is already full with 3 members.")
+        return
+
+    dungeon_teams[user_id]["team"].append(ctx.author.name)
+    await ctx.send(f"{ctx.author.name} joined the dungeon team!")
+
+    if len(dungeon_teams[user_id]["team"]) == 3:
+        await ctx.send("Your team is ready to enter the dungeon!")
+        await asyncio.sleep(3)  # Simulate dungeon animation
+
+        team_strength = sum(users[user]["strength"] for user in dungeon_teams[user_id]["team"])
+        dungeon_success = random.choice([True, False])  # 50/50 chance of success
+
+        if dungeon_success:
+            await ctx.send("Congratulations! Your team successfully cleared the dungeon and earned rewards!")
+            reward = "Dungeon Treasure"
+            for user in dungeon_teams[user_id]["team"]:
+                if reward in users[user]["inventory"]:
+                    users[user]["inventory"][reward] += 1
+                else:
+                    users[user]["inventory"][reward] = 1
+        else:
+            await ctx.send("Your team fought bravely but failed to clear the dungeon. Better luck next time!")
+        del dungeon_teams[user_id]  # Clear the team after dungeon run
+
+@bot.command()
+async def equip(ctx, item):
+    user_id = ctx.author.id
+    if user_id not in users:
+        await ctx.send("You don't have a profile yet. Use !spin to create one.")
+        return
+    if item not in users[user_id]["inventory"] or users[user_id]["inventory"][item] == 0:
+        await ctx.send("You don't have this item in your inventory.")
+        return
+
+    if item == "Titan Serum":
+        available_titan_forms = list(titan_forms.keys())
+        titan_form = random.choice(available_titan_forms)
+        users[user_id]["titan_form"] = titan_form
+        await ctx.send(f"You injected the Titan Serum and transformed into the {titan_form}!")
+    else:
+        await ctx.send("This item cannot be equipped.")
+
+@bot.command()
+async def start_story(ctx):
+    user_id = ctx.author.id
+    user_states[user_id] = "start"
+    await send_story(ctx)
+
+async def send_story(ctx):
+    user_id = ctx.author.id
+    state = user_states.get(user_id)
+    if state:
+        story = story_arcs[state]
+        choices_text = "\n".join([f"{i+1}. {choice}" for i, choice in enumerate(story["choices"])])
+        await ctx.send(f"{story['text']}\n\n{choices_text}")
+
+@bot.command()
+async def choose(ctx, choice_number: int):
+    user_id = ctx.author.id
+    state = user_states.get(user_id)
+    if state:
+        choices = story_arcs[state]["choices"]
+        if 1 <= choice_number <= len(choices):
+            chosen_state = choices[choice_number - 1]
+            user_states[user_id] = chosen_state
+            await send_story(ctx)
+
+@bot.command()
+async def roll(ctx):
+    user_id = ctx.author.id
+    state = user_states.get(user_id)
+    if state == "roll":
+        roll_result = random.randint(1, 6)
+        if roll_result > 3:
+            user_states[user_id] = "continue"
+            await ctx.send("You rolled a 4 or higher and succeeded in your action!")
+        else:
+            user_states[user_id] = "continue"
+            await ctx.send("You rolled a 3 or lower and failed in your action, but you managed to escape.")
+        await send_story(ctx)
+
+
+# Help command
+@bot.command()
+async def Help(ctx):
+    help_text = (
+        "**Available Commands:**\n\n"
+        "**Profile Commands**\n"
+        "`!profile` - Shows your profile.\n\n"
+        "**Spin Command**\n"
+        "`!spin` - Spin to get a clan and its properties.\n\n"
+        "**Shop Commands**\n"
+        "`!shop` - Displays available items in the shop.\n"
+        "`!buy [item]` - Buy an item from the shop.\n\n"
+        "**Inventory Commands**\n"
+        "`!inventory [sort_by]` - Shows your inventory. Optional sort by 'emoji' or 'count'.\n\n"
+        "**Redeem Command**\n"
+        "`!redeem [code]` - Redeem a reward code.\n\n"
+        "**Fight Command**\n"
+        "`!fight [boss_name]` - Fight against a boss.\n\n"
+        "**Dungeon Commands**\n"
+        "`!dungeon` - Join a dungeon team and start a dungeon run.\n\n"
+        "**Equip Command**\n"
+        "`!equip [item]` - Equip an item from your inventory.\n\n"
+        "**Story Commands**\n"
+        "`!start_story` - Start the interactive story based on Attack on Titan.\n"
+        "`!choose [choice_number]` - Make a choice in the story.\n"
+        "`!roll` - Roll a dice to determine the outcome of an action in the story."
+    )
+    await ctx.send(help_text)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+kexi = os.environ['kexi']
+
+bot.run(kexi)
